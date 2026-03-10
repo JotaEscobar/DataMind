@@ -8,6 +8,7 @@ export interface Message {
   thoughts?: string[];
   action?: string;
   isStreaming?: boolean;
+  chartImages?: string[];   // ← NUEVO: imágenes PNG en base64
 }
 
 interface ChatState {

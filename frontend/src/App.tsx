@@ -7,6 +7,9 @@ import {
   CheckCircle2,
   Loader2,
   X,
+  FileText,
+  Presentation,
+  LayoutDashboard,
 } from 'lucide-react';
 import { useChatStore } from './store/useChatStore';
 import type { Message } from './store/useChatStore';
@@ -20,6 +23,7 @@ import {
   fetchSessionHistory,
   renameSession,
   deleteSession,
+  exportData,
   type SessionSummary,
 } from './services/api';
 
@@ -43,6 +47,12 @@ function App() {
   const [isSessionSwitching, setIsSessionSwitching] = useState(false);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
+
+  // ── Estado del menú de exportación ──────────────────────────────────────────
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const showNotice = (type: 'error' | 'success', message: string) => {
@@ -84,24 +94,30 @@ function App() {
 
   useEffect(() => {
     if (!notice) return;
-
-    const timer = window.setTimeout(() => {
-      setNotice(null);
-    }, 4200);
-
+    const timer = window.setTimeout(() => setNotice(null), 4200);
     return () => window.clearTimeout(timer);
   }, [notice]);
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 1024) {
-        setIsSidebarOpen(false);
-      }
+      if (window.innerWidth >= 1024) setIsSidebarOpen(false);
     };
-
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Cerrar menú de exportación al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportMenu]);
 
   const upsertSession = (session: SessionSummary) => {
     setSessions((prev) => {
@@ -141,7 +157,6 @@ function App() {
     const nextTitle = prompt('Nuevo nombre de la sesión:', currentTitle);
 
     if (!nextTitle) return;
-
     const normalizedTitle = nextTitle.trim();
     if (!normalizedTitle || normalizedTitle === currentTitle) return;
 
@@ -161,14 +176,44 @@ function App() {
     try {
       await deleteSession(session.session_id);
       setSessions((prev) => prev.filter((item) => item.session_id !== session.session_id));
-
-      if (session.session_id === sessionId) {
-        clearMessages();
-      }
-
+      if (session.session_id === sessionId) clearMessages();
       showNotice('success', 'Sesión eliminada.');
     } catch {
       showNotice('error', 'No se pudo eliminar la sesión.');
+    }
+  };
+
+  // ── Exportación ──────────────────────────────────────────────────────────────
+  const handleExport = async (type: 'pdf' | 'pptx' | 'dashboard') => {
+    setShowExportMenu(false);
+
+    const hasFile = messages.some(
+      (m) => m.role === 'user' && m.content.startsWith('📎')
+    ) || messages.length > 0;
+
+    if (!hasFile) {
+      showNotice('error', 'Debes cargar un archivo antes de exportar.');
+      return;
+    }
+
+    setIsExporting(true);
+    showNotice('success', `Generando ${type.toUpperCase()}…`);
+
+    const activeSession = sessions.find((s) => s.session_id === sessionId);
+    const title = activeSession?.title || 'Análisis DataMind';
+    const insights = messages
+      .filter((m) => m.role === 'assistant' && m.content)
+      .map((m) => m.content)
+      .join('\n\n');
+
+    try {
+      await exportData(type, sessionId, title, insights);
+      showNotice('success', `${type.toUpperCase()} generado correctamente.`);
+    } catch (err) {
+      console.error('Export error:', err);
+      showNotice('error', `Error al generar el ${type.toUpperCase()}. ¿Hay datos cargados?`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -184,10 +229,10 @@ function App() {
       role: 'assistant',
       content: '',
       isStreaming: true,
-      thoughts: []
+      thoughts: [],
+      chartImages: [],
     });
 
-    // Si no hay texto pero sí hay archivo, usar pregunta por defecto
     const question = content.trim() || (file
       ? 'Analiza este archivo y dame un resumen del dataset.'
       : '¿Qué puedes decirme sobre los datos actuales?');
@@ -216,6 +261,12 @@ function App() {
             }));
           } else if (chunk.type === 'action') {
             updateLastMessage({ action: chunk.tool });
+          } else if (chunk.type === 'chart_image') {
+            // ── Acumular imágenes PNG generadas por matplotlib ──
+            updateLastMessage((msg: Message) => ({
+              ...msg,
+              chartImages: [...(msg.chartImages ?? []), chunk.data],
+            }));
           } else if (chunk.type === 'done') {
             updateLastMessage({ isStreaming: false });
             loadSessions({ silent: true });
@@ -232,7 +283,6 @@ function App() {
       setIsLoading(false);
     }
   };
-
 
   return (
     <div className="app-container">
@@ -277,11 +327,112 @@ function App() {
               {isLoading ? 'Procesando' : 'Online'}
             </div>
 
-            <div className="export-wrap relative">
-              <button type="button" className="topbar-btn cyan" id="export-btn">
-                <Download size={12} strokeWidth={2.5} />
+            {/* ── Botón Exportar con dropdown ── */}
+            <div className="export-wrap relative" ref={exportMenuRef}>
+              <button
+                type="button"
+                className="topbar-btn cyan"
+                onClick={() => setShowExportMenu((v) => !v)}
+                disabled={isExporting}
+                title="Exportar análisis"
+              >
+                {isExporting
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : <Download size={12} strokeWidth={2.5} />
+                }
                 Exportar
               </button>
+
+              {showExportMenu && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    right: 0,
+                    zIndex: 50,
+                    background: '#0e1724',
+                    border: '1px solid #1a2d42',
+                    borderRadius: '10px',
+                    padding: '6px',
+                    minWidth: '180px',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleExport('pdf')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '7px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#f0f4f8',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#1a2d42')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <FileText size={14} color="#00d4ff" />
+                    Reporte PDF
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleExport('pptx')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '7px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#f0f4f8',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#1a2d42')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <Presentation size={14} color="#a855f7" />
+                    PowerPoint
+                  </button>
+
+                  <div style={{ height: '1px', background: '#1a2d42', margin: '4px 0' }} />
+
+                  <button
+                    type="button"
+                    onClick={() => handleExport('dashboard')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '7px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#f0f4f8',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#1a2d42')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <LayoutDashboard size={14} color="#00e5a0" />
+                    Dashboard interactivo
+                  </button>
+                </div>
+              )}
             </div>
 
             <button
@@ -302,8 +453,8 @@ function App() {
             role="status"
             aria-live="polite"
             className={`mx-4 sm:mx-6 mt-3 rounded-xl border px-3 py-2.5 flex items-center gap-2.5 text-[12px] animate-[slideUp_0.2s_ease-out] ${notice.type === 'error'
-                ? 'border-red-500/35 bg-red-500/10 text-red-200'
-                : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
+              ? 'border-red-500/35 bg-red-500/10 text-red-200'
+              : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
               }`}
           >
             {notice.type === 'error' ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}

@@ -602,6 +602,10 @@ CODE EXECUTOR (para cálculos exactos)
                                 code_result = self._code_executor.execute(code, df)
                                 obs_text = code_result.to_llm_text()
 
+                                # ── Emitir imágenes PNG si el código generó gráficos ──
+                                for img_b64 in code_result.chart_images:
+                                    yield emit({"type": "chart_image", "data": img_b64})
+
                                 obs_summary = (
                                     f"✅ Código ejecutado · {obs_text[:120]}…"
                                     if len(obs_text) > 120

@@ -1,12 +1,12 @@
 """
 code_executor.py — Sandbox de ejecución de código Python
 
-El LLM genera código pandas/numpy. Este módulo lo ejecuta de forma
+El LLM genera código pandas/numpy/matplotlib. Este módulo lo ejecuta de forma
 segura contra el DataFrame real de la sesión y devuelve el resultado.
 
 SEGURIDAD:
   - Bloquea imports peligrosos (os, sys, subprocess, shutil, etc.)
-  - Solo permite pandas, numpy, scipy, sklearn, statsmodels
+  - Solo permite pandas, numpy, matplotlib, scipy, sklearn, statsmodels
   - Timeout configurable (default 30s)
   - El código solo puede leer el DataFrame — no puede escribir archivos
 
@@ -14,11 +14,12 @@ FLUJO:
   1. Agente genera: ACTION: {"type": "code", "code": "result = df['ventas'].sum()"}
   2. CodeExecutor carga el DataFrame desde FileContext
   3. Ejecuta el código en namespace restringido con `df` disponible
-  4. Captura stdout + variable `result`
-  5. Devuelve CodeResult con el output formateado para el LLM
+  4. Captura stdout + variable `result` + figuras matplotlib
+  5. Devuelve CodeResult con el output formateado para el LLM y las imágenes en base64
 """
 from __future__ import annotations
 
+import base64
 import io
 import signal
 import sys
@@ -26,10 +27,15 @@ import textwrap
 import traceback
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import numpy as np
 import pandas as pd
+
+# ── Matplotlib — configurar backend sin GUI antes de cualquier import ─────────
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 # ── Importaciones opcionales ──────────────────────────────────────────────────
 try:
@@ -77,6 +83,7 @@ class CodeResult:
     error: str = ""
     rows_affected: int = 0
     columns_in_result: list = field(default_factory=list)
+    chart_images: list = field(default_factory=list)  # Lista de PNG en base64
 
     def to_llm_text(self) -> str:
         """
@@ -89,7 +96,6 @@ class CodeResult:
         parts = []
 
         if self.output.strip():
-            # Truncar stdout si es muy largo
             stdout = self.output.strip()
             if len(stdout) > 2000:
                 stdout = stdout[:2000] + "\n... [truncado]"
@@ -107,7 +113,46 @@ class CodeResult:
         if self.columns_in_result:
             parts.append(f"Columnas: {', '.join(str(c) for c in self.columns_in_result[:15])}")
 
+        if self.chart_images:
+            parts.append(f"Gráficos generados: {len(self.chart_images)} imagen(es) PNG.")
+
         return "\n\n".join(parts) if parts else "Código ejecutado sin output."
+
+
+# ── Helpers matplotlib ────────────────────────────────────────────────────────
+
+def _capture_current_figures() -> List[str]:
+    """
+    Captura todas las figuras matplotlib abiertas como PNG en base64.
+    Cierra las figuras después de capturarlas.
+    """
+    images = []
+    for fig_num in plt.get_fignums():
+        fig = plt.figure(fig_num)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=130, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+        buf.seek(0)
+        images.append(base64.b64encode(buf.read()).decode("utf-8"))
+        plt.close(fig)
+    return images
+
+
+def _setup_chart_style():
+    """Aplica el estilo visual DataMind a matplotlib."""
+    plt.rcParams.update({
+        "figure.facecolor":  "#111d2e",
+        "axes.facecolor":    "#0e1724",
+        "axes.edgecolor":    "#1a2d42",
+        "axes.labelcolor":   "#7a9ab8",
+        "xtick.color":       "#4a6885",
+        "ytick.color":       "#4a6885",
+        "text.color":        "#f0f4f8",
+        "grid.color":        "#1a2d42",
+        "grid.linewidth":    0.8,
+        "font.family":       "sans-serif",
+        "font.size":         10,
+    })
 
 
 # ── Sandbox ────────────────────────────────────────────────────────────────────
@@ -115,6 +160,7 @@ class CodeResult:
 class CodeExecutor:
     """
     Ejecuta código Python generado por el LLM contra un DataFrame real.
+    Soporta pandas, numpy, matplotlib y librerías científicas opcionales.
     """
 
     def __init__(self, timeout_seconds: int = 30):
@@ -135,17 +181,26 @@ class CodeExecutor:
         """
         Construye el namespace de ejecución con las librerías permitidas.
         El DataFrame se pasa como `df` — el LLM siempre usa esa variable.
+        matplotlib está disponible como `plt` con estilo DataMind precargado.
         """
+        # Aplicar estilo antes de construir el namespace
+        _setup_chart_style()
+        # Cerrar figuras anteriores para evitar acumulación
+        plt.close("all")
+
         ns: dict = {
-            # Dataset — solo lectura (el LLM no debería mutar df, pero si lo hace no importa
-            # porque es una copia y no afecta el archivo original)
+            # Dataset
             "df": df.copy(),
 
-            # Pandas y Numpy — siempre disponibles
+            # Pandas y Numpy
             "pd": pd,
             "np": np,
 
-            # Variable de resultado — el LLM debe asignar aquí su respuesta
+            # Matplotlib — disponible directamente
+            "plt": plt,
+            "matplotlib": matplotlib,
+
+            # Variable de resultado
             "result": None,
         }
 
@@ -171,16 +226,17 @@ class CodeExecutor:
     def execute(self, code: str, df: pd.DataFrame) -> CodeResult:
         """
         Ejecuta el código en el sandbox y devuelve un CodeResult.
+        Las figuras matplotlib generadas se capturan automáticamente en base64.
         """
         # 1. Verificación de seguridad
         safety_error = self._check_safety(code)
         if safety_error:
             return CodeResult(success=False, output="", result_repr="", error=safety_error)
 
-        # 2. Limpiar indentación (el LLM a veces genera código con indentación extra)
+        # 2. Limpiar indentación
         code = textwrap.dedent(code).strip()
 
-        # 3. Construir namespace
+        # 3. Construir namespace (cierra figuras previas internamente)
         namespace = self._build_namespace(df)
 
         # 4. Capturar stdout
@@ -193,7 +249,6 @@ class CodeExecutor:
 
         try:
             if hasattr(signal, "SIGALRM"):
-                # Unix — timeout limpio
                 def _timeout_handler(signum, frame):
                     raise TimeoutError(f"Ejecución excedió {self.timeout}s")
                 signal.signal(signal.SIGALRM, _timeout_handler)
@@ -203,10 +258,11 @@ class CodeExecutor:
                 finally:
                     signal.alarm(0)
             else:
-                # Windows — ejecutar sin timeout (limitación del OS)
+                # Windows — sin timeout nativo
                 _run()
 
         except TimeoutError as e:
+            plt.close("all")
             return CodeResult(
                 success=False,
                 output=stdout_capture.getvalue(),
@@ -214,8 +270,8 @@ class CodeExecutor:
                 error=str(e),
             )
         except Exception:
+            plt.close("all")
             error_text = traceback.format_exc()
-            # Limpiar el traceback para el LLM — solo las últimas 3 líneas
             lines = [l for l in error_text.strip().split("\n") if l.strip()]
             short_error = "\n".join(lines[-3:])
             return CodeResult(
@@ -225,7 +281,10 @@ class CodeExecutor:
                 error=short_error,
             )
 
-        # 6. Extraer resultado
+        # 6. Capturar figuras matplotlib generadas durante la ejecución
+        chart_images = _capture_current_figures()
+
+        # 7. Extraer resultado
         raw_result = namespace.get("result")
         output = stdout_capture.getvalue()
 
@@ -237,14 +296,12 @@ class CodeExecutor:
             if isinstance(raw_result, pd.DataFrame):
                 rows_affected = len(raw_result)
                 columns_in_result = raw_result.columns.tolist()
-                # Mostrar máximo 20 filas al LLM
                 preview = raw_result.head(20).fillna("").astype(str)
                 result_repr = preview.to_string(index=True)
             elif isinstance(raw_result, pd.Series):
                 rows_affected = len(raw_result)
                 result_repr = raw_result.head(20).to_string()
             elif isinstance(raw_result, dict):
-                # Formatear dict de forma legible
                 result_repr = "\n".join(f"  {k}: {v}" for k, v in list(raw_result.items())[:30])
             elif isinstance(raw_result, (list, tuple)):
                 result_repr = "\n".join(str(item) for item in raw_result[:30])
@@ -257,6 +314,7 @@ class CodeExecutor:
             result_repr=result_repr,
             rows_affected=rows_affected,
             columns_in_result=columns_in_result,
+            chart_images=chart_images,
         )
 
 
@@ -287,26 +345,16 @@ execute_python_code — Ejecuta código Python real contra el DataFrame cargado.
 USA ESTO para cualquier cálculo numérico: sumas, promedios, agrupaciones,
 filtros, correlaciones, rankings, etc. NUNCA calcules números mentalmente.
 
-El DataFrame está disponible como `df`. Asigna tu resultado a `result`.
+El DataFrame está disponible como `df`. Asigna tu resultado final a `result`.
+Para gráficos, usa `plt` (matplotlib ya importado). Llama plt.figure() y
+construye el gráfico normalmente — se captura automáticamente como imagen PNG.
+NO llames plt.show() ni plt.savefig() — el sistema los captura solo.
 
 Ejemplos:
-  # Suma por categoría
-  result = df.groupby('categoria')['ventas'].sum().sort_values(ascending=False)
+  result = df.groupby('vendedor')['monto'].sum().sort_values(ascending=False)
 
-  # Top 5 con porcentaje acumulado
-  totales = df.groupby('vendedor')['monto'].sum().sort_values(ascending=False)
-  totales_df = totales.reset_index()
-  totales_df['pct'] = totales_df['monto'] / totales_df['monto'].sum() * 100
-  totales_df['pct_acum'] = totales_df['pct'].cumsum()
-  result = totales_df.head(5)
-
-  # Correlación entre columnas numéricas
-  result = df[['col1', 'col2', 'col3']].corr()
-
-  # Detección de outliers con IQR
-  Q1 = df['valor'].quantile(0.25)
-  Q3 = df['valor'].quantile(0.75)
-  IQR = Q3 - Q1
-  result = df[(df['valor'] < Q1 - 1.5*IQR) | (df['valor'] > Q3 + 1.5*IQR)]
-  print(f"Outliers encontrados: {len(result)}")
-""".strip()
+  fig, ax = plt.subplots(figsize=(10, 5))
+  result.plot(kind='bar', ax=ax, color='#00d4ff')
+  ax.set_title('Ventas por vendedor')
+  result = result  # siempre asigna result al final
+"""

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const API_BASE = API_URL.replace(/\/+$/, '');
+export const API_BASE = API_URL.replace(/\/+$/, '');
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -12,7 +12,10 @@ export type AgentEvent =
   | { type: 'action'; tool: string }
   | { type: 'observation'; summary: string }
   | { type: 'insight_token'; token: string }
+  | { type: 'chart_image'; data: string }       // ← NUEVO: PNG en base64
   | { type: 'session_title'; title: string }
+  | { type: 'intent'; value: string }
+  | { type: 'persona'; value: string }
   | { type: 'done' }
   | { type: 'error'; message: string };
 
@@ -106,4 +109,60 @@ export async function renameSession(sessionId: string, title: string): Promise<v
 
 export async function deleteSession(sessionId: string): Promise<void> {
   await api.delete(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+// ── Exportación ────────────────────────────────────────────────────────────────
+
+export type ExportType = 'pdf' | 'pptx' | 'dashboard';
+
+export async function exportData(
+  type: ExportType,
+  sessionId: string,
+  title: string,
+  insights: string
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('session_id', sessionId);
+  formData.append('title', title);
+  formData.append('insights', insights);
+  formData.append('warnings', '[]');
+  formData.append('suggested_questions', '[]');
+
+  if (type === 'dashboard') {
+    const response = await fetch(`${API_BASE}/export/dashboard`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) throw new Error(`Error exportando dashboard: ${response.status}`);
+    const html = await response.text();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (!win) {
+      // Fallback: descarga como archivo
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'datamind-dashboard.html';
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
+  }
+
+  const response = await fetch(`${API_BASE}/export/${type}`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) throw new Error(`Error exportando ${type}: ${response.status}`);
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `datamind-reporte.${type}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }

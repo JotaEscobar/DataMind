@@ -1,0 +1,34 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Runtime data
+data_storage/
+exports/
+uploads/
+
+# Temp and backups
+tmp/
+*.bak
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+nul
+git_status.txt
+
+# Database
+*.db
+*.sqlite3
+
+# Dotenv
+.env
+.env.*
+!.env.example

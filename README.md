@@ -1,107 +1,140 @@
-# 📊 Analista de Datos — Prototipo Inteligente
+# 🧠 DataMind 2.0 — Analista de Datos IA Senior
 
-Analista de datos personal potenciado por IA (Groq y Ollama local), diseñado para realizar análisis estadísticos, detección de anomalías y generación de reportes interactivos directamente desde archivos CSV y Excel.
+![DataMind Logo](logo.png)
+
+> **DataMind** es una plataforma de análisis de datos de última generación que combina la potencia de agentes inteligentes (ReAct) con la precisión de Python para transformar archivos crudos en insights estratégicos accionables.
+
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/Frontend-React_19-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Styles-Tailwind_4.0-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
+[![Docker](https://img.shields.io/badge/Deployment-Docker-2496ED?style=for-the-badge&logo=docker)](https://www.docker.com/)
 
 ---
 
-## 🚀 Inicio Rápido
+## ✨ Características Principales
 
-### 1. Variables de Entorno (Obligatorio)
-Crea una copia de `.env.example` y renómbralo a `.env`:
+*   🚀 **Diagnóstico Automático Instantáneo:** Al subir un archivo (CSV/Excel), el sistema genera un perfil estructural, detecta tipos de datos, calidad y el dominio del dataset sin tiempos de espera.
+*   🤖 **Motor Agéntico ReAct:** No es solo un chat. El agente escribe y ejecuta código Python en tiempo real para realizar cálculos exactos, evitando las alucinaciones comunes en los LLMs.
+*   🎭 **Personas Especializadas:** El sistema detecta la intención y el dominio para asignar el análisis a un experto:
+    *   **Financial Analyst:** Rentabilidad y tendencias económicas.
+    *   **Data Detective:** Anomalías, outliers e inconsistencias.
+    *   **Statistician:** Significancia, p-values y correlaciones.
+    *   **Growth Analyst:** Cohortes, retención y segmentación.
+*   📊 **Dashboards Interactivos:** Genera tableros visuales compartibles mediante una URL única basada en UUID.
+*   📄 **Reportería Ejecutiva:** Exporta tus hallazgos directamente a formatos profesionales **PDF** y presentaciones **PowerPoint (PPTX)**.
+*   🌐 **Hybrid LLM Support:** Conectividad flexible con **Groq** (Llama 3.3 70B) para máxima potencia o **Ollama** para ejecución 100% local.
+
+---
+
+## 🛠️ Stack Tecnológico
+
+### **Frontend**
+- **Framework:** React 19 + TypeScript + Vite.
+- **Estado:** Zustand (Global) & TanStack Query (Server State).
+- **UI:** Tailwind CSS 4.0 + Framer Motion (Animaciones) + Lucide React.
+- **Comunicación:** SSE (Server-Sent Events) para respuestas en streaming real.
+
+### **Backend**
+- **Framework:** FastAPI (Python 3.10+).
+- **Procesamiento:** Pandas & NumPy.
+- **Agente:** Arquitectura ReAct propia con clasificación de intención (IntentClassifier) y gestión de sesiones persistentes.
+- **Exportación:** ReportLab (PDF) & Python-PPTX.
+
+### **Infraestructura**
+- **Containerización:** Docker & Docker Compose.
+- **Persistencia:** Almacenamiento local estructurado en `data_storage/` y gestión de base de datos ligera para historial.
+
+---
+
+## 🚀 Instalación y Uso
+
+### Requisitos Previos
+- Docker & Docker Compose instalado.
+- (Opcional) Una API Key de [Groq](https://console.groq.com/) para el modelo principal.
+- (Opcional) [Ollama](https://ollama.ai/) instalado localmente si no deseas usar la nube.
+
+### Configuración rápida (Docker)
+
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com/JotaEscobar/DataMind.git
+   cd DataMind
+   ```
+
+2. **Configurar variables de entorno:**
+   Copia el archivo de ejemplo y edita tus llaves:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Levantar el proyecto:**
+   ```bash
+   docker-compose up --build -d
+   ```
+
+4. **Acceder a la aplicación:**
+   - Frontend: [http://localhost:5173](http://localhost:5173)
+   - API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## 💻 Desarrollo Local (Sin Docker)
+
+Si prefieres correrlo manualmente:
+
+**Backend:**
 ```bash
-cp .env.example .env
+cd backend
+python -m venv venv
+source venv/bin/activate  # o venv\Scripts\activate en Windows
+pip install -r requirements.txt
+python -m app.main
 ```
-Abre el archivo `.env` e ingresa tu clave de la API de Groq en `GROQ_API_KEY`.
 
-### 2. Instalar Ollama (Opcional pero recomendado)
-Descárgalo desde: [ollama.com/download/windows](https://ollama.com/download/windows)
-
-Luego, abre una terminal y descarga el modelo (si deseas usarlo de respaldo o según el flujo local):
+**Frontend:**
 ```bash
-ollama pull llama3.1
+cd frontend
+npm install
+npm run dev
 ```
 
-### 3. Ejecutar la Aplicación
-Simplemente haz doble clic en el archivo `start.bat`.
-
-- Se creará automáticamente un entorno virtual (`venv`) si no existe.
-- Se instalarán todas las dependencias necesarias.
-- El servidor se abrirá en tu navegador en: [http://localhost:8000](http://localhost:8000)
-
-### 4. Ejecutar con Docker (Backend + Frontend)
-Si ya tienes Docker Desktop, puedes levantar todo con un solo comando:
-
-```bash
-docker compose up --build
-```
-
-También puedes usar `start-docker.bat` para iniciarlo con doble clic.
-
-- Frontend: [http://localhost:5173](http://localhost:5173)
-- Backend API: [http://localhost:8000](http://localhost:8000)
-
-> Nota: el backend en Docker usa por defecto `OLLAMA_HOST=http://host.docker.internal:11434`.
-> Asegúrate de tener Ollama corriendo en tu máquina host (`ollama serve`) y el modelo descargado (`ollama pull llama3.1`).
-
 ---
 
-## 🧠 Capacidades del Analista
-
-- **📎 Procesamiento Multiformato**: Carga y analiza archivos CSV y Excel (`.xlsx`, `.xls`).
-- **💬 Interacción Natural**: Consultas en español sobre tus datos (ej: "¿Qué producto es el más rentable?").
-- **📊 Visualización Dinámica**: Generación automática de gráficos (Barras, Líneas, Dispersión) adaptados a tu pregunta.
-- **🔍 Análisis Avanzado (ML)**:
-    - **Detección de Anomalías**: Identifica valores atípicos automáticamente.
-    - **Estadísticas Predictivas**: Tendencias, correlaciones y segmentación (clustering).
-- **📂 Exportación Profesional**: Genera reportes completos en **PDF** y presentaciones **PowerPoint** con un clic.
-- **🔗 Cruce de Datos**: Capacidad de analizar y relacionar múltiples archivos simultáneamente.
-
----
-
-## 🛠️ Tecnologías Utilizadas
-
-- **Backend**: Python 3.10+, FastAPI, Pydantic.
-- **IA/LLM**: Groq API (Llama 3.1/3), Ollama para procesamiento local.
-- **Análisis de Datos**: Pandas, NumPy, Scikit-learn, Statsmodels.
-- **Visualización**: Plotly (Gráficos interactivos).
-- **Reportes**: ReportLab (PDF), Python-pptx (PowerPoint).
-- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS.
-
----
-
-## 🗂️ Estructura del Proyecto
+## 📂 Estructura del Proyecto
 
 ```text
 analista/
-├── backend/                # Lógica de servidor y núcleo de procesamiento
-│   └── app/
-│       ├── core/           # Orquestación de IA y base de datos
-│       ├── services/       # Generadores de archivos (PDF/PPTX)
-│       ├── tools/          # Herramientas de limpieza y analítica
-│       └── main.py         # Entry point de FastAPI
-├── data_storage/           # Almacenamiento local (SQLite y datasets)
-├── exports/                # Reportes generados listos para descargar
-├── frontend/               # Interfaz web (React + Vite)
-├── uploads/                # Espacio temporal para archivos subidos
-├── docker-compose.yml      # Orquestación local (backend + frontend)
-├── requirements.txt        # Dependencias del proyecto
-├── start.bat               # Arranque local backend
-└── start-docker.bat        # Arranque Docker en un clic
+├── backend/
+│   ├── app/
+│   │   ├── core/      # Lógica del Agente, Clasificador de Intención
+│   │   ├── services/  # Motores de exportación y Dashboards
+│   │   └── main.py    # Endpoints de FastAPI
+│   └── Dockerfile
+├── frontend/
+│   ├── src/           # Componentes React y Hooks de Zustand
+│   └── Dockerfile
+├── data_storage/      # Archivos subidos y persistencia
+├── docker-compose.yml
+└── requirements.txt
 ```
 
 ---
 
-## 📋 Requisitos del Sistema
+## 🤝 Contribuciones
 
-- **OS**: Windows 10/11.
-- **RAM**: 8GB mínimo (16GB recomendado para fluidez de IA).
-- **GPU**: Opcional, pero recomendada para acelerar la respuesta de Ollama.
-- **Espacio**: ~5GB para el modelo de lenguaje.
+Las contribuciones son bienvenidas. Si tienes una idea para mejorar el motor agéntico o añadir nuevas herramientas de análisis:
+
+1. Haz un Fork del proyecto.
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`).
+3. Haz commit de tus cambios (`git commit -m 'Add some AmazingFeature'`).
+4. Haz Push a la rama (`git push origin feature/AmazingFeature`).
+5. Abre un Pull Request.
 
 ---
 
-## ❓ Solución de Problemas
+## 📄 Licencia
 
-*   **"Ollama no encontrado"**: Asegúrate de que Ollama esté instalado y el proceso `ollama serve` esté activo.
-*   **"Error al procesar"**: Revisa que hayas ejecutado `ollama pull llama3.1`.
-*   **Lentitud inicial**: El primer análisis puede tardar unos segundos mientras el modelo se carga en la memoria RAM/VRAM.
+Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+
+---
+Elaborado con ❤️ por **[Jorge Escobar](https://github.com/JotaEscobar)**
